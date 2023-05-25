@@ -19,6 +19,7 @@ export function validateRequest(validators: Validators) {
       if (validators.query) {
         req.query = await validators.query.parseAsync(req.query);
       }
+
       return next();
     } catch (error) {
       if (error instanceof ZodError) {
@@ -26,6 +27,7 @@ export function validateRequest(validators: Validators) {
         const { message, path } = error.errors[0];
         return next(new Error(`${message} in "${path}" field`));
       }
+
       return next(error);
     }
   };

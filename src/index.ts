@@ -1,7 +1,6 @@
 import { errorHandler } from './middlewares/errorHander';
 import { client } from './db';
 import express from 'express';
-import http from 'http';
 import cors from 'cors';
 import { config } from './config/index';
 import { userRouter } from './users/user.routes';
@@ -42,6 +41,3 @@ export const startServer = () => {
     console.log(`Server is running on port: ${config.server.port}`)
   );
 };
-
-// http
-// .createServer(app)
