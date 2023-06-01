@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { AnyZodObject, ZodError } from 'zod';
+import { AnyZodObject } from 'zod';
 
 interface Validators {
   body?: AnyZodObject;
@@ -22,12 +22,6 @@ export function validateRequest(validators: Validators) {
 
       return next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        res.status(400);
-        const { message, path } = error.errors[0];
-        return next(new Error(`${message} in "${path}" field`));
-      }
-
       return next(error);
     }
   };

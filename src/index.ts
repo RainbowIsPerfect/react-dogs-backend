@@ -1,20 +1,26 @@
-import { errorHandler } from './middlewares/errorHander';
-import { client } from './db';
 import express from 'express';
 import cors from 'cors';
-import { config } from './config/index';
+import mongoose from 'mongoose';
+import { logger } from './utils/Logger';
+import { errorHandler } from './middlewares/errorHander';
+import { config } from './config';
 import { userRouter } from './users/user.routes';
 import { productsRouter } from './products/product.routes';
+import { clearCollections } from './utils/clearCollections';
 
 export const app = express();
 
 export const connectToDb = async () => {
   try {
-    await client.connect();
-    console.log('Connected to DB');
+    logger.processing('Connecting to DB...');
+    await mongoose.connect(config.mongo.url, {
+      retryWrites: true,
+      w: 'majority',
+    });
+    logger.success('Connected to DB');
     startServer();
   } catch (error) {
-    console.log('Failed to connect');
+    logger.error('Failed to connect to DB');
   }
 };
 
@@ -38,6 +44,6 @@ export const startServer = () => {
   app.use(errorHandler);
 
   app.listen(config.server.port, () =>
-    console.log(`Server is running on port: ${config.server.port}`)
+    logger.success(`Server is running on port: ${config.server.port}`)
   );
 };

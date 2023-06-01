@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { User, UserInfo, UserSignInData } from './user.model';
 import { userController } from './user.controllers';
 import { authRequired } from '../middlewares/authRequired';
 import { validateRequest } from '../middlewares/validateRequest';
+import { User, UserSignInData, UserInfo } from './user.validations';
 
 export const userRouter = Router();
 

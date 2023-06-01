@@ -1,6 +1,5 @@
 import request from 'supertest';
 import { startServer } from '..';
-import { client } from '../db';
 
 describe('app', () => {
   // beforeAll(async () => {

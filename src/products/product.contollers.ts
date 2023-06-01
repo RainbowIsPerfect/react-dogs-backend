@@ -1,277 +1,320 @@
-import { ObjectId } from 'mongodb';
-import { Locals, NextFunction, Request, Response } from 'express';
-import { UserWithId } from '../users/user.model';
+import { NextFunction, Request, Response } from 'express';
 import {
-  ProductsModel,
-  ProductsWithTotal,
-  ProductWithId,
-  ProductType,
-  NewProductType,
+  NewProduct,
   ParamsWithId,
-  ProductAdditionalInfo,
-  NewReviewType,
   ParamsWithIdAndReview,
-} from './product.model';
-
-export type LocalsType = { user: UserWithId };
-export type RequestQuery = {
-  query: string;
-  limit: number;
-  page: number;
-};
+  ProductsWithTotal,
+  ProductType,
+  NewReviewType,
+  ProductsQueryParams,
+} from './../types';
+import { getQueryParams } from './../utils/getQueryParams';
+import { AppError } from '../utils/AppError';
+import { LocalsType } from '../types';
+import { ProductsModel } from './product.model';
+import { logger } from '../utils/Logger';
+import { countAvgRating } from '../utils/countAvgRating';
 
 const createProduct = async (
-  req: Request<{}, ProductWithId, NewProductType>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<{}, ProductType, NewProduct>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
+    logger.processing('Creating new product..');
+
     const newProduct: ProductType = {
-      author: {
-        ...res.locals.user,
-      },
+      ...req.body,
+      author: res.locals.user,
       reviews: [],
       likes: [],
-      ...req.body,
+      avgRating: 0,
     };
-
-    const { insertedId } = await ProductsModel.insertOne(newProduct);
-    const product = await ProductsModel.findOne(insertedId);
+    const product = await ProductsModel.create(newProduct);
 
     if (!product) {
-      throw new Error('Failed to add new product');
+      throw new AppError('Failed to add new product');
     }
 
-    return res.status(200).json(product);
+    logger.success('New product created');
+
+    return res.status(201).json(product);
   } catch (error) {
     next(error);
   }
 };
 
 const readAllProducts = async (
-  req: Request<{}, ProductsWithTotal, {}, RequestQuery>,
+  req: Request<{}, ProductsWithTotal, {}, ProductsQueryParams>,
   res: Response<ProductsWithTotal>,
   next: NextFunction
 ) => {
   try {
-    const productsLength = (await ProductsModel.find().toArray()).length;
-    const products = await ProductsModel.find(
-      {
-        name: { $regex: req.query.query || '', $options: 'i' },
-      },
-      { skip: (req.query.page - 1) * +req.query.limit, limit: +req.query.limit }
-    ).toArray();
+    logger.processing(
+      `Searching for products with query params: ${JSON.stringify(req.query)}...`
+    );
+
+    const { limit, query, skip, sort } = getQueryParams(req.query);
+    const products = await ProductsModel.find({
+      name: { $regex: query, $options: 'i' },
+    });
+    const productsWithParamsApplied = await ProductsModel.find({
+      name: { $regex: query, $options: 'i' },
+    })
+      .sort(sort)
+      .skip(skip)
+      .limit(limit);
 
     const productWithTotal = {
-      total: req.query.query ? products.length : productsLength,
-      products,
+      total: products.length,
+      products: productsWithParamsApplied,
     };
 
-    return res.status(200).json(productWithTotal);
+    logger.success(`${products.length} products found`);
+
+    return res.json(productWithTotal);
   } catch (error) {
     next(error);
   }
 };
 
 const getProductById = async (
-  req: Request<ParamsWithId, ProductWithId>,
-  res: Response<ProductWithId>,
+  req: Request<ParamsWithId, ProductType>,
+  res: Response<ProductType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Searching for product with ${productId} ID...`);
     const product = await ProductsModel.findOne({
-      _id: new ObjectId(productId),
+      _id: productId,
     });
 
     if (!product) {
-      res.status(404);
-      throw new Error(`Product with ${productId} not found`);
+      throw new AppError(`Product with ${productId} not found`);
     }
 
-    return res.status(200).json(product);
+    logger.success(`Product with ${productId} ID found`);
+
+    return res.json(product);
   } catch (error) {
     next(error);
   }
 };
 
 const setLikeById = async (
-  req: Request<ParamsWithId, ProductWithId>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithId, ProductType>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Setting like on product with ${productId} ID...`);
     const product = await ProductsModel.findOneAndUpdate(
-      { _id: new ObjectId(productId) },
-      { $addToSet: { likes: res.locals.user._id.toString() } },
+      { _id: productId },
+      { $addToSet: { likes: res.locals.user._id } },
       { returnDocument: 'after' }
     );
 
-    if (!product.value) {
-      res.status(404);
-      throw new Error('Failed to set like');
+    if (!product) {
+      throw new AppError('Failed to set like');
     }
 
-    return res.status(200).json(product.value);
+    logger.success(`Like was successfully set`);
+
+    return res.json(product);
   } catch (error) {
     next(error);
   }
 };
 
 const deleteLikeById = async (
-  req: Request<ParamsWithId, ProductWithId>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithId, ProductType>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Removing like from product with ${productId} ID...`);
     const product = await ProductsModel.findOneAndUpdate(
-      { _id: new ObjectId(productId) },
-      { $pull: { likes: res.locals.user._id.toString() } },
+      { _id: productId },
+      { $pull: { likes: res.locals.user._id } },
       { returnDocument: 'after' }
     );
 
-    if (!product.value) {
-      res.status(404);
-      throw new Error('Failed to delete like');
+    if (!product) {
+      throw new AppError(`Product with ${productId} not found`);
     }
 
-    return res.status(200).json(product.value);
+    logger.success(`Like was successfully removed`);
+
+    return res.json(product);
   } catch (error) {
     next(error);
   }
 };
 
 const deleteProductById = async (
-  req: Request<ParamsWithId, ProductWithId>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithId, ProductType>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Removing product with ${productId} ID...`);
     const product = await ProductsModel.findOne({
-      _id: new ObjectId(productId),
+      _id: productId,
     });
 
     if (!product) {
-      res.status(404);
-      throw new Error(`Product with ID ${productId} not found`);
+      throw new AppError(`Product with ID ${productId} not found`);
     }
 
     if (!(product.author._id.toString() === res.locals.user._id.toString())) {
-      res.status(403);
-      throw new Error(`Can't delete other users products`);
+      throw new AppError(`You can't delete other users products`, 403);
     }
 
-    const deletedProduct = await ProductsModel.findOneAndDelete({
-      _id: new ObjectId(productId),
+    const deletedProduct = await product.deleteOne({
+      returnDocument: 'before',
     });
 
-    if (!deletedProduct.value) {
-      res.status(404);
-      throw new Error('Failed to delete product');
+    if (!deletedProduct) {
+      throw new AppError('Failed to delete product', 400);
     }
 
-    return res.status(200).json(deletedProduct.value);
+    logger.success(`Product was successfully removed`);
+
+    return res.json(deletedProduct);
   } catch (error) {
     next(error);
   }
 };
 
 const updateProductById = async (
-  req: Request<ParamsWithId, ProductWithId, NewProductType>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithId, ProductType, NewProduct>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Updating product with ${productId} ID...`);
     const product = await ProductsModel.findOne({
-      _id: new ObjectId(productId),
+      _id: productId,
     });
 
     if (!product) {
-      res.status(404);
-      throw new Error(`Product with ID ${productId} not found`);
+      throw new AppError(`Product with ID ${productId} not found`);
     }
-
+    console.log(product.author._id.toString() === res.locals.user._id.toString());
+    
     if (!(product.author._id.toString() === res.locals.user._id.toString())) {
-      res.status(403);
-      throw new Error(`Can't delete other users products`);
+      throw new AppError(`You can't update other users products`, 403);
     }
 
     const updatedProduct = await ProductsModel.findOneAndUpdate(
-      {
-        _id: new ObjectId(productId),
-      },
-      { $set: req.body },
+      { _id: productId },
+      { $set: { ...req.body } },
       { returnDocument: 'after' }
     );
 
-    if (!updatedProduct.value) {
-      res.status(404);
-      throw new Error('Failed to update product');
+    if (!updatedProduct) {
+      throw new AppError('Failed to update product', 400);
     }
 
-    return res.status(200).json(updatedProduct.value);
+    logger.success(`Product with ${productId} ID was updated`);
+
+    return res.json(updatedProduct);
   } catch (error) {
     next(error);
   }
 };
 
 const addReviewById = async (
-  req: Request<ParamsWithId, ProductWithId, NewReviewType>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithId, ProductType, NewReviewType>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const productId = req.params.id;
+    logger.processing(`Adding review on product with ${productId} ID...`);
+
     const product = await ProductsModel.findOneAndUpdate(
-      { _id: new ObjectId(productId) },
+      { _id: productId },
       {
         $push: {
           reviews: {
             author: res.locals.user,
-            product: new ObjectId(productId).toString(),
+            product: productId,
             ...req.body,
-            _id: new ObjectId().toString(),
           },
         },
       },
       { returnDocument: 'after' }
     );
 
-    if (!product.value) {
-      res.status(404);
-      throw new Error('Product not found');
+    if (!product) {
+      throw new AppError('Product not found');
     }
 
-    return res.status(200).json(product.value);
+    const avgRating = countAvgRating(product.reviews);
+    const updatedProduct = await ProductsModel.findOneAndUpdate(
+      { _id: productId },
+      {
+        $set: { avgRating },
+      },
+      {
+        returnDocument: 'after',
+      }
+    );
+
+    if (!updatedProduct) {
+      throw new AppError('Product or review not found');
+    }
+
+    logger.success(`Review was added product with ${productId} ID...`);
+
+    return res.json(updatedProduct);
   } catch (error) {
     next(error);
   }
 };
 
 const removeReviewById = async (
-  req: Request<ParamsWithIdAndReview, ProductWithId>,
-  res: Response<ProductWithId, LocalsType>,
+  req: Request<ParamsWithIdAndReview, ProductType>,
+  res: Response<ProductType, LocalsType>,
   next: NextFunction
 ) => {
   try {
     const { id, reviewId } = req.params;
-
+    logger.processing(`Removing review from product with ${id} ID...`);
     const product = await ProductsModel.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: id },
       { $pull: { reviews: { _id: reviewId } } },
       { returnDocument: 'after' }
     );
 
-    if (!product.value) {
-      res.status(404);
-      throw new Error('Product or review not found');
+    if (!product) {
+      throw new AppError('Product or review not found');
     }
 
-    return res.status(200).json(product.value);
+    const avgRating = countAvgRating(product.reviews);
+    const updatedProduct = await ProductsModel.findOneAndUpdate(
+      { _id: id },
+      {
+        $set: { avgRating },
+      },
+      {
+        returnDocument: 'after',
+      }
+    );
+
+    if (!updatedProduct) {
+      throw new AppError('Product or review not found');
+    }
+
+    logger.success(`Review was removed from product with ${id} ID...`);
+
+    return res.json(updatedProduct);
   } catch (error) {
     next(error);
   }

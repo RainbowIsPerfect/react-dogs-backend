@@ -1,90 +1,50 @@
-import { z } from 'zod';
-import { db } from '../db';
-import { WithId, ObjectId } from 'mongodb';
+import { userSchema } from './../users/user.model';
+import { ProductType, ReviewType } from './../types';
+import { Schema, model } from 'mongoose';
 
-export const Author = z.object({
-  name: z.string(),
-  email: z.string().email(),
-  avatar: z.string().url(),
-  about: z.string(),
-});
+const authorSchema = userSchema.pick([
+  'about',
+  'name',
+  'email',
+  'avatar',
+  'group',
+]);
 
-export const NewReview = z.object({
-  rating: z.number().min(1).max(5),
-  text: z.string(),
-});
+const reviewSchema = new Schema<ReviewType>(
+  {
+    rating: { type: Number, required: true },
+    text: { type: String, required: true },
+    product: { type: String, required: true },
+    author: { type: authorSchema, required: true },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-export const Review = NewReview.extend({
-  product: z.string(),
-  author: Author,
-  _id: z.string(),
-});
+const productsSchema = new Schema<ProductType>(
+  {
+    discount: { type: Number, required: true },
+    stock: { type: Number, required: true },
+    available: { type: Boolean, required: true },
+    isPublished: { type: Boolean, required: true },
+    pictures: { type: String, required: true },
+    tags: { type: [String], required: true },
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    wight: { type: String, required: true },
+    description: { type: String, required: true },
+    likes: { type: [String], required: true },
+    reviews: { type: [reviewSchema], required: true },
+    author: { type: authorSchema, required: true },
+    avgRating: { type: Number, required: true },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-export const ProductIdParams = z.object({
-  id: z
-    .string()
-    .nonempty()
-    .refine((arg) => {
-      try {
-        return new ObjectId(arg);
-      } catch (error) {
-        return false;
-      }
-    }),
-});
-
-export const ReviewIdParams = ProductIdParams.extend({
-  reviewId: z
-    .string()
-    .nonempty()
-    .refine((arg) => {
-      try {
-        return new ObjectId(arg);
-      } catch (error) {
-        return false;
-      }
-    }),
-});
-
-export const NewProduct = z.object({
-  available: z.boolean().default(true),
-  isPublished: z.boolean().default(true),
-  name: z.string(),
-  discount: z.number().nonnegative().max(99).default(0),
-  price: z.number().positive(),
-  stock: z.number().nonnegative(),
-  pictures: z.string().url(),
-  tags: z.array(z.string()).default([]),
-  description: z.string(),
-  wight: z.string(),
-});
-
-export const ProductUpdate = NewProduct.partial();
-
-export const ProductAdditionalInfo = z.object({
-  likes: z.array(z.string()).default([]),
-  author: Author,
-  reviews: z.array(Review).default([]),
-});
-
-export const Product = NewProduct.merge(ProductAdditionalInfo);
-
-export type NewProductType = z.infer<typeof NewProduct>;
-export type ProductType = Omit<z.infer<typeof Product>, 'author'> & {
-  author: AuthorType;
-};
-export type ProductAdditionalInfo = z.infer<typeof ProductAdditionalInfo>;
-export type ReviewType = z.infer<typeof Review>;
-export type NewReviewType = z.infer<typeof NewReview>;
-export type AuthorType = WithId<z.infer<typeof Author>>;
-export type ProductWithId = WithId<ProductType>;
-export type ReviewWithId = WithId<ReviewType>;
-export type AuthorWithId = WithId<AuthorType>;
-export type ProductsWithTotal = {
-  total: number;
-  products: ProductWithId[];
-};
-export type ParamsWithId = z.infer<typeof ProductIdParams>;
-export type ParamsWithIdAndReview = z.infer<typeof ReviewIdParams>;
-
-export const ProductsModel = db.collection<ProductType>('products');
+export const ProductsModel = model<ProductType>(
+  'products',
+  productsSchema
+);

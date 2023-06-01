@@ -1,14 +1,15 @@
-import {
-  NewProduct,
-  ProductIdParams,
-  ProductUpdate,
-  NewReview,
-  ReviewIdParams,
-} from './product.model';
 import { validateRequest } from '../middlewares/validateRequest';
 import { Router } from 'express';
 import { authRequired } from '../middlewares/authRequired';
 import { productsController } from './product.contollers';
+import {
+  NewProduct,
+  NewReview,
+  ProductIdParams,
+  ProductQueryParams,
+  ProductUpdate,
+  ReviewIdParams,
+} from './products.validations';
 
 export const productsRouter = Router();
 
@@ -20,7 +21,14 @@ productsRouter.post(
   }),
   productsController.createProduct
 );
-productsRouter.get('/products?', productsController.readAllProducts);
+productsRouter.get(
+  '/products?',
+  authRequired,
+  validateRequest({
+    query: ProductQueryParams,
+  }),
+  productsController.readAllProducts
+);
 productsRouter.get(
   '/products/:id',
   authRequired,

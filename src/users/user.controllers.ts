@@ -1,20 +1,16 @@
-import jwt from 'jsonwebtoken';
-import { config } from '../config/index';
+import { logger } from './../utils/Logger';
+import { AppError } from './../utils/AppError';
+import { generateAccsessToken } from '../utils/tokenHelpers';
 import { NextFunction, Request, Response } from 'express';
+import { UserModel } from './user.model';
 import {
-  UserModel,
-  UserWithId,
-  UserInfoType,
-  SignInUserType,
-  UserWithoutPassword,
+  LocalsType,
+  SignInData,
   UserType,
-} from './user.model';
-import { LocalsType } from '../products/product.contollers';
-
-type SignInData = {
-  data: UserWithoutPassword;
-  token: string;
-};
+  UserWithoutPassword,
+  SignInUserType,
+  UserInfoType,
+} from '../types';
 
 const signUpUser = async (
   req: Request<{}, UserWithoutPassword, UserType>,
@@ -22,22 +18,18 @@ const signUpUser = async (
   next: NextFunction
 ) => {
   try {
+    logger.processing(`Creating user with email: ${req.body.email} ...`);
     const isExisting = await UserModel.findOne({ email: req.body.email });
+
     if (isExisting) {
-      res.status(409);
-      throw new Error('User with this email already exists');
-    }
-    const { insertedId } = await UserModel.insertOne(req.body, {});
-    console.log(insertedId);
-    const user = await UserModel.findOne({ _id: insertedId });
-
-    if (!user) {
-      return res.status(400);
+      throw new AppError('User with this email already exists', 409);
     }
 
-    const { password, ...userData } = user;
+    const user = await UserModel.create(req.body);
+    const { password, ...data } = user.toJSON();
+    logger.success('User was created');
 
-    return res.status(200).json(userData);
+    return res.json(data);
   } catch (error) {
     next(error);
   }
@@ -49,23 +41,18 @@ const signInUser = async (
   next: NextFunction
 ) => {
   try {
-    const dbuser = await UserModel.findOne(req.body);
+    logger.processing(`Signing in user with email: ${req.body.email} ...`);
+    const dbuser = await UserModel.findOne(req.body).select('-password');
 
     if (!dbuser) {
-      res.status(404);
-      throw new Error('Wrong email or password');
+      throw new AppError('Wrong email or password');
     }
 
-    const token = jwt.sign(
-      {
-        _id: dbuser._id,
-      },
-      config.token.key
-    );
+    const token = generateAccsessToken(dbuser._id);
 
-    const { password, ...userData } = dbuser;
+    logger.success('User was successfully signed in');
 
-    return res.status(200).json({ data: userData, token });
+    return res.json({ data: dbuser, token });
   } catch (error) {
     next(error);
   }
@@ -77,12 +64,10 @@ const getAllUsers = async (
   next: NextFunction
 ) => {
   try {
-    const users = await UserModel.find().toArray();
-    const usersWithoutPassword = users.map(
-      ({ password, ...userData }) => userData
-    );
-
-    return res.status(200).json(usersWithoutPassword);
+    logger.processing('Getting all users...');
+    const users = await UserModel.find().select('-password');
+    logger.success('Users was successfully received');
+    return res.json(users);
   } catch (error) {
     next(error);
   }
@@ -93,46 +78,34 @@ const getMe = async (
   res: Response<UserWithoutPassword, LocalsType>,
   next: NextFunction
 ) => {
-  try {
-    const currentUser = await UserModel.findOne({
-      email: res.locals.user.email,
-    });
-
-    if (!currentUser) {
-      res.status(404);
-      throw new Error("User doesn't exist");
-    }
-
-    const { password, ...userData } = currentUser;
-
-    return res.status(200).json(userData);
-  } catch (error) {
-    next(error);
-  }
+  logger.success('User was successfully received');
+  return res.json(res.locals.user);
 };
 
 const updateMe = async (
-  req: Request<{}, UserWithId, UserInfoType>,
-  res: Response<UserWithId, LocalsType>,
+  req: Request<{}, UserType, UserInfoType>,
+  res: Response<UserType, LocalsType>,
   next: NextFunction
 ) => {
   try {
+    logger.processing('Updating profile...');
     const currentUser = await UserModel.findOneAndUpdate(
-      res.locals.user,
+      { _id: res.locals.user._id },
       {
         $set: req.body,
       },
       {
         returnDocument: 'after',
       }
-    );
+    ).select('-password');
 
-    if (!currentUser.value) {
-      res.status(404);
-      throw new Error('User not found');
+    if (!currentUser) {
+      throw new AppError('User not found');
     }
 
-    return res.status(200).json(currentUser.value);
+    logger.success('Profile was updated');
+
+    return res.json(currentUser);
   } catch (error) {
     next(error);
   }

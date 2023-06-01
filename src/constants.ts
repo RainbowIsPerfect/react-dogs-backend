@@ -1,0 +1,1 @@
+export const SORTING_VALUES = ['PRICE_ASC', 'PRICE_DESC', 'NAME', 'DISCOUNT', 'DATE_NEWEST', 'DATE_OLDEST'] as const;

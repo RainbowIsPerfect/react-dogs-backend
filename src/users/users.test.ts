@@ -1,7 +1,5 @@
 import request from 'supertest';
 import { app } from '..';
-import { client } from '../db';
-
 
 const existingUserMock = {
   email: 'andrey-smollin1@gmail.com',
@@ -28,10 +26,6 @@ const notExistingUserMock = {
 };
 
 describe('POST /users/signin', () => {
-  beforeAll(async () => {
-    await client.connect();
-  });
-
   it('responds with status 200 if user exists in database', async () => {
     request(app)
       .post('/users/signin')
@@ -51,9 +45,5 @@ describe('POST /users/signin', () => {
       message: 'Invalid email in "email" field',
       statusCode: 400,
     });
-  });
-
-  afterAll(async () => {
-    await client.close(true);
   });
 });

@@ -1,42 +1,30 @@
-import { UserModel } from '../users/user.model';
-import { config } from '../config/index';
 import { NextFunction, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
-import { ObjectId } from 'mongodb';
+import { AppError } from './../utils/AppError';
+import { UserModel } from '../users/user.model';
+import { validateAccsessToken } from '../utils/tokenHelpers';
 
 export const authRequired = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  const token = req.headers.authorization;
-
-  if (!token) {
-    return res.status(401).json({ message: 'Auth required' });
-  }
-
   try {
-    const currentToken = token.replace('Bearer ', '');
+    const token = req.headers.authorization;
 
-    const decodedToken = jwt.verify(currentToken, config.token.key);
-
-    if (!(typeof decodedToken === 'object' && '_id' in decodedToken)) {
-      res.status(401);
-      throw new Error('Auth required');
+    if (!token) {
+      throw new AppError('Auth required', 401);
     }
 
-    const { _id } = decodedToken;
-
-    const dbUser = await UserModel.findOne({ _id: new ObjectId(_id) });
+    const decodedToken = validateAccsessToken(token);
+    const dbUser = await UserModel.findById(decodedToken).select('-password');
 
     if (!dbUser) {
-      res.status(401);
-      throw new Error('Auth required');
+      throw new AppError('Auth required', 401);
     }
 
     res.locals.user = dbUser;
     next();
   } catch (error) {
-    return next(error);
+    next(error);
   }
 };
